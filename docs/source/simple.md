@@ -25,7 +25,7 @@ More features coming:
     pip3 install hub==1.0.0a4
     ```
 
-2. Register and authenticate to uploade datasests
+2. Register and authenticate to upload datasests
     ```
     hub register
     hub login
