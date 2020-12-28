@@ -1156,3 +1156,81 @@ class TorchDataset:
         self._init_ds()
         for i in range(len(self)):
             yield self[i]
+
+class TorchSegDataset:
+    def __init__(
+        self,
+        ds,
+        transform=None,
+        inplace=True,
+        output_type=dict,
+        num_samples=None,
+        offset=None,
+        aug=None,
+        task=None,
+    ):
+        self._ds = None
+        self._url = ds.url
+        self._token = ds.token
+        self._transform = transform
+        self.inplace = inplace
+        self.output_type = output_type
+        self.num_samples = num_samples
+        self.offset = offset
+        self.aug = aug
+        self.task = task
+
+    def _do_transform(self, data):
+        if self._transform and self.aug:
+            print('foo')
+            return data
+        if self.aug:
+            if self.task == 'seg':
+                im, lb = self.data_keys
+                img = (data['image'].permute(1,2,0)*255).byte().numpy()
+                mask = data['mask'].squeeze().byte().numpy()
+                ret = self.aug(image=img, mask=mask)
+                img, mask = ret['image'], (ret['mask']*255).long()
+                return ret
+
+        return self._transform(data)
+
+    def _init_ds(self):
+        """
+        For each process, dataset should be independently loaded
+        """
+        if self._ds is None:
+            self._ds = Dataset(self._url, token=self._token, lock_cache=False)
+            self.data_keys = list(self._ds._schema.dict_.keys())
+
+    def __len__(self):
+        self._init_ds()
+        return self.num_samples if self.num_samples is not None else self._ds.shape[0]
+
+    def __getitem__(self, index):
+        index = index + self.offset if self.offset is not None else index
+        self._init_ds()
+        d = {}
+        for key in self._ds._tensors.keys():
+            split_key = key.split("/")
+            cur = d
+            for i in range(1, len(split_key) - 1):
+                if split_key[i] not in cur.keys():
+                    cur[split_key[i]] = {}
+                cur = cur[split_key[i]]
+            if not isinstance(self._ds._tensors[key][index], bytes) and not isinstance(
+                self._ds._tensors[key][index], str
+            ):
+                t = self._ds._tensors[key][index]
+                if self.inplace:
+                    t = torch.tensor(t)
+                cur[split_key[-1]] = t
+        d = self._do_transform(d)
+        if self.inplace & (self.output_type != dict) & (type(d) == dict):
+            d = self.output_type(d.values())
+        return d
+
+    def __iter__(self):
+        self._init_ds()
+        for i in range(len(self)):
+            yield self[i]
